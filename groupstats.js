@@ -1,55 +1,53 @@
-// utils/groupStats.js
-const fs = require('fs');
-const path = require('path');
+// commands/admin/groupstats.js
 
-const DB_PATH = path.join(__dirname, '../database/groupStats.json');
+const { getStats } = require('../../utils/groupstats');
 
-function loadDB() {
-    try {
-        if (!fs.existsSync(DB_PATH)) return {};
-        return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
-    } catch {
-        return {};
+module.exports = {
+    name: 'groupstats',
+    aliases: ['stats', 'leaderboard', 'gstats', 'topmembers', 'msgs', 'messagestats'],
+    category: 'general',
+    description: 'Show today\'s group chat statistics',
+    usage: '.groupstats',
+    groupOnly: true,
+
+    async execute(sock, msg, args, extra) {
+        try {
+            const from = extra.from;
+            const stats = getStats(from);
+
+            if (!stats)
+                return extra.reply('📊 No activity recorded today.');
+
+            const { total, users } = stats;
+
+            // top members
+            const sortedUsers = Object.entries(users)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5);
+
+            let topText = sortedUsers.length
+                ? sortedUsers.map(([id, count], i) => `${i + 1}) @${id.split('@')[0]} — ${count} msgs`).join('\n')
+                : 'No active users yet.';
+
+            const text = `
+📊 *Group Stats — Today*
+
+📌 *Total Messages:* ${total}
+
+👥 *Top Active Members:*
+${topText}
+
+Type .myactivity to see your stats.
+`.trim();
+
+            await sock.sendMessage(from, {
+                text,
+                mentions: sortedUsers.map(u => u[0])
+            }, { quoted: msg });
+
+        } catch (err) {
+            console.error('[groupstats cmd] error:', err);
+            extra.reply('❌ Error loading stats.');
+        }
     }
-}
-
-function saveDB(data) {
-    try {
-        fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
-    } catch (err) {
-        console.error('[groupStats] save error:', err);
-    }
-}
-
-function addMessage(groupId, senderId) {
-    const db = loadDB();
-    const today = new Date().toISOString().slice(0, 10);
-    const hour = new Date().getHours().toString();
-
-    if (!db[groupId]) db[groupId] = {};
-    if (!db[groupId][today]) {
-        db[groupId][today] = {
-            total: 0,
-            users: {},
-            hours: {}
-        };
-    }
-
-    const g = db[groupId][today];
-
-    g.total++;
-    g.users[senderId] = (g.users[senderId] || 0) + 1;
-    g.hours[hour] = (g.hours[hour] || 0) + 1;
-
-    saveDB(db);
-}
-
-function getStats(groupId) {
-    const db = loadDB();
-    const today = new Date().toISOString().slice(0, 10);
-
-    if (!db[groupId] || !db[groupId][today]) return null;
-    return db[groupId][today];
-}
-
-module.exports = { addMessage, getStats };
+};
